@@ -233,8 +233,12 @@ const GameParser = (() => {
     if (/strange (?:object|item)/i.test(text)) {
       state.mimicWarning = true;
     }
-    // "The strange object" + attack = mimic revealed
-    if (/(?:it was a mimic|mimic imitating|actually a )/i.test(text)) {
+    // Mimic awakened — it attacks or is revealed
+    if (/(?:mimic hits|mimic bites|mimic attacks|The .* mimic)/i.test(text)) {
+      state.mimicWarning = 'active'; // active mimic, suggest escape
+    }
+    // Mimic killed or escaped
+    if (/(?:it was a mimic|mimic imitating|actually a |you (?:kill|destroy) .* mimic|mimic is killed)/i.test(text)) {
       state.mimicWarning = false;
     }
 

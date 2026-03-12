@@ -87,9 +87,9 @@ const DungeonTracker = (() => {
     if (container) container.innerHTML = '<div class="info-box">No levels visited yet.</div>';
   }
 
-  function reset() { visited.clear(); renderUI(); }
-  function save() { const d={}; visited.forEach((v,k)=>d[k]={...v,features:[...v.features]}); return d; }
-  function load(data) { if(!data) return; visited.clear(); for(const[k,v] of Object.entries(data)) visited.set(k,{...v,features:new Set(v.features||[])}); }
+  function reset() { for (const k in levels) delete levels[k]; renderUI(); }
+  function save() { const d={}; for(const[k,v] of Object.entries(levels)) d[k]={...v,features:[...(v.features||[])]}; return d; }
+  function load(data) { if(!data) return; for(const k in levels) delete levels[k]; for(const[k,v] of Object.entries(data)) levels[k]={...v,features:new Set(v.features||[])}; }
 
   return { update, initUI, addFeature, recordVisit, reset, save, load };
 })();

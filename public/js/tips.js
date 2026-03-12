@@ -770,8 +770,10 @@ const StrategyTips = (() => {
     }
 
     // Mimic warning
-    if (gs.mimicWarning) {
-      tips.push("🎭 Strange objects are always mimics.");
+    if (gs.mimicWarning === 'active') {
+      tips.push("🎭 Mimic awake! They're slow — just walk away. Break line of sight (turn a corner) and they'll go back to mimicking an object.");
+    } else if (gs.mimicWarning) {
+      tips.push("🎭 Strange objects are always mimics. Don't touch it — walk away. If you wake it, break line of sight to make it re-mimic.");
     }
 
     // ==========================================================================
