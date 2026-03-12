@@ -340,8 +340,13 @@ const PriceID = (() => {
   // Track items we've already auto-named this session
   const autoNamedItems = new Set();
 
-  // Auto-name an item via #call command sent to the terminal
-  // NetHack #call flow: #call\n → "What class?" → classChar → "Call <class> by what name?" → name\n
+  // Auto-name an item via #name command sent to the terminal
+  // NetHack 3.7 #name flow:
+  //   #name\n → "Name an individual object? [ynq]" → n → 
+  //   "What class of objects do you want to name?" → classChar →
+  //   "What do you want to call <appearance>?" → type name → \n
+  // NetHack 3.6.7 #call flow:
+  //   #call\n → "Call a class of objects by what name?" → classChar → type name → \n
   function autoNameItem(itemAppearance, identification) {
     if (!autoNameEnabled) return;
     if (!itemAppearance || !identification) return;
@@ -349,7 +354,7 @@ const PriceID = (() => {
 
     autoNamedItems.add(itemAppearance);
 
-    // Item class characters for #call prompt
+    // Item class characters
     const classMap = {
       potion: '!', scroll: '?', wand: '/', ring: '=',
       armor: '[', tool: '(', spellbook: '+'
@@ -361,13 +366,22 @@ const PriceID = (() => {
     if (!classChar) return;
 
     const callName = identification;
+    const variant = (typeof GameParser !== 'undefined' && GameParser.getState) ? GameParser.getState().variant : '3.7';
 
     if (typeof TerminalManager !== 'undefined' && TerminalManager.sendKeys) {
-      // Stagger keystrokes to let NetHack process each prompt
-      setTimeout(() => TerminalManager.sendKeys('#call\n'), 50);
-      setTimeout(() => TerminalManager.sendKeys(classChar), 300);
-      setTimeout(() => TerminalManager.sendKeys(callName + '\n'), 550);
-      console.log(`[PriceID] Auto-naming: ${itemAppearance} → ${callName}`);
+      if (variant === '3.6.7') {
+        // 3.6.7: #call\n → class char → name\n
+        setTimeout(() => TerminalManager.sendKeys('#call\n'), 100);
+        setTimeout(() => TerminalManager.sendKeys(classChar), 400);
+        setTimeout(() => TerminalManager.sendKeys(callName + '\n'), 700);
+      } else {
+        // 3.7: #name\n → 'n' (not individual) → class char → name\n
+        setTimeout(() => TerminalManager.sendKeys('#name\n'), 100);
+        setTimeout(() => TerminalManager.sendKeys('n'), 400);
+        setTimeout(() => TerminalManager.sendKeys(classChar), 700);
+        setTimeout(() => TerminalManager.sendKeys(callName + '\n'), 1000);
+      }
+      console.log(`[PriceID] Auto-naming (${variant}): ${itemAppearance} → ${callName}`);
     }
   }
 
@@ -380,28 +394,64 @@ const PriceID = (() => {
 
       const cha = gameState.charisma || 10;
       const sucker = isSucker(gameState);
-      const action = gameState.lastPrice.type === 'sell' ? 'sell' : 'buy';
+      const action = gameState.lastPrice.type || 'buy';
       const observed = gameState.lastPrice.amount;
       const itemName = gameState.lastPrice.itemName || '';
-      const results = lookupAllCategories(observed, action, cha, sucker);
+
+      console.log(`[PriceID] Processing: ${observed}zm, action=${action}, CHA=${cha}, item="${itemName}"`);
+
+      let results = lookupAllCategories(observed, action, cha, sucker);
+
+      // Narrow by item appearance — if we know it's a "lamp", only look in tools, etc.
+      const itemCategoryMap = {
+        lamp: 'tool', whistle: 'tool', flute: 'tool', harp: 'tool', drum: 'tool',
+        horn: 'tool', bag: 'tool', sack: 'tool', marker: 'tool', stethoscope: 'tool',
+        bugle: 'tool',
+        potion: 'potion', 'potions of': 'potion',
+        scroll: 'scroll', 'scrolls of': 'scroll', 'scroll labeled': 'scroll',
+        wand: 'wand',
+        ring: 'ring',
+        boots: 'armor', helm: 'armor', helmet: 'armor', cloak: 'armor', gauntlets: 'armor',
+        'dunce cap': 'armor',
+        spellbook: 'spellbook',
+      };
+
+      if (itemName) {
+        const lowerItem = itemName.toLowerCase();
+        for (const [keyword, cat] of Object.entries(itemCategoryMap)) {
+          if (lowerItem.includes(keyword)) {
+            // Filter results to only this category
+            if (results[cat]) {
+              const filtered = { [cat]: results[cat] };
+              results = filtered;
+              console.log(`[PriceID] Narrowed to category: ${cat} (matched "${keyword}" in "${itemName}")`);
+            }
+            break;
+          }
+        }
+      }
 
       if (Object.keys(results).length > 0) {
         const suckerNote = sucker ? ' <span style="color:var(--danger);">(sucker markup!)</span>' : '';
         const itemNote = itemName ? ` — "${itemName}"` : '';
 
-        // Check if we have a unique identification (only one possible item across all categories)
+        // Check if we have a unique identification
         let totalItems = 0;
         let uniqueId = null;
         let uniqueCat = null;
         for (const [cat, groups] of Object.entries(results)) {
           for (const group of groups) {
             totalItems += group.items.length;
-            if (group.items.length === 1 && totalItems === 1) {
+            if (totalItems === 1) {
               uniqueId = group.items[0];
               uniqueCat = cat;
             }
           }
         }
+        // Only unique if exactly 1 total item across all results
+        if (totalItems !== 1) { uniqueId = null; uniqueCat = null; }
+
+        console.log(`[PriceID] Results: ${totalItems} items, unique=${uniqueId}, cat=${uniqueCat}`);
 
         if (uniqueId && totalItems === 1) {
           // UNIQUE IDENTIFICATION — highlight prominently

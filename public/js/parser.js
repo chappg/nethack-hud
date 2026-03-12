@@ -238,23 +238,35 @@ const GameParser = (() => {
       state.mimicWarning = false;
     }
 
-    // Price detection: "for you, only X zorkmids" or "worth X zorkmids"
-    // Also: "#chat price: 'Hyeghu offers X gold pieces for your <item>'"
-    const priceMatch = text.match(/(?:for (?:you|thee),?\s*(?:only\s*)?|(?:I'll give you|offer)\s+|costs?\s+)(\d+)\s*(?:zorkmids?|gold pieces?|zm)/i);
+    // Items on ground — track BEFORE price detection so it's available as context
+    if (/you see here/i.test(text) || /you feel here/i.test(text)) {
+      state.itemOnGround = text;
+    }
+
+    // Price detection: "for you, only X zorkmids" or "worth X zorkmids" or "#chat price"
+    // Shop messages: "Hyeghu offers it for 13 zorkmids" / "For you, only 13 zorkmids"
+    // #chat: "<name> says it'll cost you X zorkmids" / "price X zorkmids"
+    const priceMatch = text.match(/(?:for (?:you|thee),?\s*(?:only\s*)?|(?:I'll give you|offer)\s+|costs?\s+|cost you\s+|it for\s+|price\s+)(\d+)\s*(?:zorkmids?|gold pieces?|zm)/i);
     if (priceMatch) {
-      // Try to extract item name from the price message
+      // Try to extract item name from the price message itself
       let itemName = '';
-      // "For you, <item> — only X zorkmids" pattern
-      const itemInPrice = text.match(/for (?:you|thee),?\s+(?:a |an |the )?(.+?)(?:\s*[,;—–-]\s*|\s+)(?:only\s+)?\d+\s*(?:zorkmid|gold|zm)/i);
-      if (itemInPrice) {
-        itemName = itemInPrice[1].trim();
-      }
-      // Fall back to last "you see here" item
+
+      // "Hyeghu offers it for X zorkmids" — no item name, fall through
+      // "For you, only X zorkmids" — no item name, fall through
+
+      // Fall back to last "you see here" item (most common case in shops)
       if (!itemName && state.itemOnGround) {
         const igMatch = state.itemOnGround.match(/(?:see|feel) here (?:a |an |the )?(.+?)\.?\s*$/i);
         if (igMatch) itemName = igMatch[1].trim();
       }
-      state.lastPrice = { amount: parseInt(priceMatch[1]), raw: text, time: Date.now(), itemName };
+
+      // Also try "you see" without "here" — some messages say "You see a lamp (unpaid, 13 zorkmids)"
+      if (!itemName) {
+        const inlinePrice = text.match(/(?:a |an |the )(.+?)\s*\(unpaid,?\s*\d+\s*zorkmids?\)/i);
+        if (inlinePrice) itemName = inlinePrice[1].trim();
+      }
+
+      state.lastPrice = { amount: parseInt(priceMatch[1]), type: 'buy', raw: text, time: Date.now(), itemName };
     }
 
     // Sell price: "I'll give you X gold pieces for your <item>"
@@ -263,11 +275,6 @@ const GameParser = (() => {
     if (sellMatch) {
       const itemName = sellMatch[2] || '';
       state.lastPrice = { amount: parseInt(sellMatch[1]), type: 'sell', raw: text, time: Date.now(), itemName: itemName.trim() };
-    }
-
-    // Items on ground
-    if (/you see here/i.test(text) || /you feel here/i.test(text)) {
-      state.itemOnGround = text;
     }
 
     // Engulfing detection
