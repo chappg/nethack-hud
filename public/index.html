@@ -1,0 +1,315 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>NetHack HUD — Intelligent Game Assistant</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/xterm@5.3.0/css/xterm.css">
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <!-- Top Bar -->
+  <header id="top-bar">
+    <div class="top-left">
+      <span style="font-weight:bold;color:var(--accent);margin-right:10px;">NetHack HUD <span style="font-weight:normal;font-size:11px;color:var(--text-dim);">by a1</span></span>
+      <span id="connection-status" class="status-indicator disconnected">⚡ Disconnected</span>
+      <select id="server-select" title="SSH Server">
+        <option value="hardfought-us">Hardfought (US)</option>
+        <option value="hardfought-eu">Hardfought (EU)</option>
+        <option value="hardfought-au">Hardfought (AU)</option>
+        <option value="nao">nethack.alt.org</option>
+      </select>
+      <button id="btn-reconnect" class="panel-toggle" title="Reconnect to selected server">↻</button>
+    </div>
+    <div class="top-center">
+      <span id="game-variant" class="variant-badge" style="display:none"></span>
+      <span id="dungeon-level">Dlvl: —</span>
+      <span class="separator">|</span>
+      <span id="turn-count">T: —</span>
+      <span class="separator">|</span>
+      <span id="player-info">—</span>
+    </div>
+    <div class="top-right">
+      <span class="size-controls">
+        <button id="size-80x24" class="panel-toggle" title="80×24">80×24</button>
+        <button id="size-default" class="panel-toggle size-active" title="133×36">133×36</button>
+        <button id="size-custom-btn" class="panel-toggle" title="Custom size">Custom</button>
+        <span id="size-custom-inputs" style="display:none;">
+          <input type="number" id="size-cols" class="size-input" value="133" min="80" max="250" title="Columns">
+          ×
+          <input type="number" id="size-rows" class="size-input" value="36" min="24" max="80" title="Rows">
+          <button id="size-apply" class="panel-toggle">Apply</button>
+        </span>
+      </span>
+      <span class="separator">|</span>
+      <button id="btn-toggle-left" class="panel-toggle" title="Toggle left panel (Alt+1)">◀</button>
+      <button id="btn-toggle-right" class="panel-toggle" title="Toggle right panel (Alt+2)">▶</button>
+      <button id="btn-debug" class="panel-toggle" title="Toggle debug logging" onclick="GameParser.debug=!GameParser.debug;this.classList.toggle('size-active');document.getElementById('debug-bar').style.display=GameParser.debug?'':'none'">🐛</button>
+    </div>
+  </header>
+
+  <div id="debug-bar" style="display:none;padding:4px 24px;background:#1a1a2e;border-bottom:1px solid #f8514966;font-size:11px;font-family:monospace;color:#f0883e;overflow-x:auto;white-space:nowrap;">🐛 Debug loading…</div>
+
+  <main id="app">
+    <!-- Left Sidebar -->
+    <aside id="left-sidebar" class="sidebar">
+      <!-- Waiting for game -->
+      <div id="waiting-for-game" class="info-box" style="margin:8px;padding:16px;text-align:center;">
+        🗡️ Waiting for game…<br><small style="color:var(--text-dim)">Connect via SSH and start playing. Panels will appear when a game is detected.</small>
+      </div>
+
+      <!-- Ascension Kit -->
+      <section class="panel" id="kit-panel" data-requires-game
+        <h3 class="panel-title">🗡️ Ascension Kit <span id="kit-pct" class="badge">0%</span></h3>
+        <div id="kit-content" class="panel-body">
+          <div class="kit-section">
+            <h4>Equipment</h4>
+            <ul id="kit-equipment"></ul>
+          </div>
+          <div class="kit-section">
+            <h4>Intrinsics</h4>
+            <ul id="kit-properties"></ul>
+          </div>
+        </div>
+      </section>
+
+      <!-- Dungeon Tracker -->
+      <section class="panel" id="dungeon-panel" data-requires-game>
+        <h3 class="panel-title">🗺️ Dungeon Map</h3>
+        <div class="panel-body" id="dungeon-content"></div>
+      </section>
+
+      <!-- Conducts -->
+      <section class="panel" id="conducts-panel" data-requires-game>
+        <h3 class="panel-title">📜 Conducts</h3>
+        <div class="panel-body" id="conducts-list"></div>
+      </section>
+
+      <!-- Altar & Prayer -->
+      <section class="panel" id="altar-panel" data-requires-game>
+        <h3 class="panel-title">⛩️ Altars, Prayer & Divine Favor</h3>
+        <div class="panel-body" id="altar-content"></div>
+      </section>
+
+      <!-- Monster Wiki Search -->
+      <section class="panel" id="wiki-panel">
+        <h3 class="panel-title">🔍 Monster Wiki</h3>
+        <div class="panel-body">
+          <input type="text" id="monster-search-input" placeholder="Search monsters..." style="width:100%;background:var(--bg);border:1px solid var(--border);color:var(--text);padding:4px 6px;font-family:inherit;font-size:11px;border-radius:3px;margin-bottom:6px;">
+          <div id="wiki-results" style="max-height:200px;overflow-y:auto;"></div>
+        </div>
+      </section>
+
+      <!-- BUC Tracker -->
+      <section class="panel" id="buc-panel" data-requires-game>
+        <h3 class="panel-title">🔮 BUC Status</h3>
+        <div class="panel-body" id="buc-list"></div>
+      </section>
+
+      <!-- Sokoban Helper -->
+      <section class="panel" id="sokoban-panel" data-requires-game>
+        <h3 class="panel-title">🧩 Sokoban</h3>
+        <div class="panel-body" id="sokoban-content"></div>
+      </section>
+
+      <!-- Price ID -->
+      <section class="panel" id="price-panel">
+        <h3 class="panel-title">💰 Price ID</h3>
+        <div class="panel-body">
+          <div id="shop-status" class="info-box">Not in shop</div>
+          <div style="margin:4px 0;font-size:11px;">
+            <label style="cursor:pointer;display:flex;align-items:center;gap:4px;">
+              <input type="checkbox" id="auto-name-toggle" style="margin:0;">
+              <span>Auto #name identified items</span>
+            </label>
+          </div>
+          <div id="price-auto-results"></div>
+          <hr class="divider">
+          <h4>Manual Lookup</h4>
+          <div class="price-form">
+            <select id="price-category">
+              <option value="potion">Potion</option>
+              <option value="scroll">Scroll</option>
+              <option value="wand">Wand</option>
+              <option value="ring">Ring</option>
+              <option value="armor">Armor</option>
+              <option value="tool">Tool</option>
+              <option value="spellbook">Spellbook</option>
+            </select>
+            <input type="number" id="price-input" placeholder="Observed price">
+            <select id="price-action">
+              <option value="buy">Buy price</option>
+              <option value="sell">Sell price</option>
+            </select>
+            <button id="price-lookup-btn">Identify</button>
+          </div>
+          <div id="price-results"></div>
+          <div id="identified-items">
+            <h4>Identified</h4>
+            <ul id="identified-list"></ul>
+          </div>
+        </div>
+      </section>
+    </aside>
+
+    <!-- Terminal -->
+    <div id="terminal-container">
+      <div id="terminal-wrapper">
+        <div id="terminal"></div>
+      </div>
+    </div>
+
+    <!-- Right Sidebar -->
+    <aside id="right-sidebar" class="sidebar">
+      <!-- Waiting for game (right) -->
+      <div id="waiting-for-game-right" class="info-box" style="margin:8px;padding:16px;text-align:center;">
+        ⚔️ Game state will appear here once you start playing.
+      </div>
+
+      <!-- Weapon Lookup -->
+      <section class="panel" id="weapon-panel" data-requires-game style="display:none;">
+        <h3 class="panel-title">⚔️ Weapon Stats</h3>
+        <div class="panel-body" id="weapon-content">
+          <div class="info-box">Pick up or wield a weapon to see stats.</div>
+        </div>
+      </section>
+
+      <!-- Risk Meter -->
+      <section class="panel" id="risk-panel" data-requires-game>
+        <h3 class="panel-title">⚠️ Risk Assessment</h3>
+        <div class="panel-body">
+          <div id="risk-display">
+            <div id="risk-number">—</div>
+            <div id="risk-label">Unknown</div>
+          </div>
+          <ul id="risk-factors"></ul>
+        </div>
+      </section>
+
+      <!-- Monster Threats -->
+      <section class="panel" id="monster-panel" data-requires-game>
+        <h3 class="panel-title">👹 Visible Threats</h3>
+        <div class="panel-body">
+          <ul id="monster-list"></ul>
+          <div id="no-monsters" class="info-box">No threats detected</div>
+        </div>
+      </section>
+
+      <!-- Strategy Tips -->
+      <section class="panel" id="tips-panel" data-requires-game>
+        <h3 class="panel-title">💡 Strategy Tips</h3>
+        <div class="panel-body">
+          <ul id="tips-content"></ul>
+        </div>
+      </section>
+
+      <!-- Spells -->
+      <section class="panel" id="spell-panel" data-requires-game>
+        <h3 class="panel-title">📖 Spells</h3>
+        <div class="panel-body" id="spell-list"></div>
+      </section>
+
+      <!-- Timeline -->
+      <section class="panel" id="timeline-panel" data-requires-game>
+        <h3 class="panel-title">📅 Key Events</h3>
+        <div class="panel-body" id="timeline-list"></div>
+      </section>
+
+      <!-- Session Stats -->
+      <section class="panel" id="stats-panel" data-requires-game>
+        <h3 class="panel-title">📊 Session Stats</h3>
+        <div class="panel-body" id="session-stats"></div>
+      </section>
+
+      <!-- Message Log -->
+      <section class="panel" id="message-panel" data-requires-game>
+        <h3 class="panel-title">📜 Messages</h3>
+        <div class="panel-body">
+          <input type="text" id="message-search" placeholder="Search messages...">
+          <ul id="message-log"></ul>
+        </div>
+      </section>
+    </aside>
+  </main>
+
+  <!-- Shortcuts Help Overlay -->
+  <div id="shortcuts-overlay" class="shortcuts-overlay hidden">
+    <div class="shortcuts-content">
+      <h3>⌨️ Keyboard Shortcuts</h3>
+      <table>
+        <tr><td><kbd>Alt+1</kbd></td><td>Toggle left panel (Kit + Price ID)</td></tr>
+        <tr><td><kbd>Alt+2</kbd></td><td>Toggle right panel (Risk + Threats + Tips)</td></tr>
+        <tr><td><kbd>Alt+?</kbd></td><td>Show/hide this help</td></tr>
+      </table>
+      <p style="margin-top:12px;color:var(--text-dim);font-size:11px;">All other keys go directly to the terminal.</p>
+      <button id="close-shortcuts" class="panel-toggle" style="margin-top:8px;">Close</button>
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/xterm@5.3.0/lib/xterm.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/xterm-addon-fit@0.8.0/lib/xterm-addon-fit.min.js"></script>
+  <script src="js/parser.js"></script>
+  <script src="js/price-id.js"></script>
+  <script src="js/risk.js"></script>
+  <script src="js/kit-tracker.js"></script>
+  <script src="js/dungeon-tracker.js"></script>
+  <script src="js/altar-tracker.js"></script>
+  <script src="js/spell-tracker.js"></script>
+  <script src="js/session-stats.js"></script>
+  <script src="js/sokoban.js"></script>
+  <script src="js/buc-tracker.js"></script>
+  <script src="js/death-analysis.js"></script>
+  <script src="js/conducts.js"></script>
+  <script src="js/timeline.js"></script>
+  <script src="js/god-tracker.js"></script>
+  <script src="js/tips.js"></script>
+  <script src="js/weapon-lookup.js"></script>
+  <script src="js/game-session.js"></script>
+  <script src="js/terminal.js"></script>
+  <script src="js/app.js"></script>
+  <script>
+  // Panel collapse/expand with localStorage persistence
+  (function() {
+    const STORAGE_KEY = 'nethack-hud-collapsed';
+    let collapsed = {};
+    try { collapsed = JSON.parse(localStorage.getItem(STORAGE_KEY)) || {}; } catch(e) {}
+
+    function save() {
+      try { localStorage.setItem(STORAGE_KEY, JSON.stringify(collapsed)); } catch(e) {}
+    }
+
+    document.querySelectorAll('.panel-title').forEach(title => {
+      const panel = title.closest('.panel');
+      if (!panel) return;
+      const id = panel.id;
+      if (!id) return;
+
+      // Add toggle indicator
+      const arrow = document.createElement('span');
+      arrow.className = 'collapse-arrow';
+      arrow.textContent = collapsed[id] ? '▶' : '▼';
+      arrow.style.cssText = 'margin-right:6px;font-size:10px;transition:transform 0.15s;display:inline-block;';
+      title.prepend(arrow);
+
+      // Style the title as clickable
+      title.style.cursor = 'pointer';
+      title.style.userSelect = 'none';
+
+      // Apply saved state
+      if (collapsed[id]) {
+        panel.querySelectorAll('.panel-body, .kit-section, #kit-content').forEach(el => el.style.display = 'none');
+      }
+
+      title.addEventListener('click', (e) => {
+        e.stopPropagation();
+        collapsed[id] = !collapsed[id];
+        save();
+        const bodies = panel.querySelectorAll('.panel-body, .kit-section, #kit-content');
+        bodies.forEach(el => el.style.display = collapsed[id] ? 'none' : '');
+        arrow.textContent = collapsed[id] ? '▶' : '▼';
+      });
+    });
+  })();
+  </script>
+</body>
+</html>

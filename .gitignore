@@ -1,0 +1,5 @@
+node_modules/
+*.db
+*.db-journal
+developer_key.der
+developer_key.pem
