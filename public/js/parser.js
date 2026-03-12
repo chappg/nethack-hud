@@ -161,8 +161,13 @@ const GameParser = (() => {
       }
     }
 
-    // Parse message line (row 0)
+    // Parse message lines (row 0 and row 1 — messages can span)
     parseMessage(getRow(0));
+    const row1 = getRow(1);
+    // Only parse row 1 if it looks like a message (not map data)
+    if (row1 && /[a-zA-Z]{3,}/.test(row1) && !/^[-|+#\. ]+$/.test(row1.trim())) {
+      parseMessage(row1);
+    }
 
     // Parse map (rows 1 to rows-3)
     parseMap(buffer, rows, cols);
@@ -245,12 +250,17 @@ const GameParser = (() => {
     // Items on ground — track BEFORE price detection so it's available as context
     if (/you see here/i.test(text) || /you feel here/i.test(text)) {
       state.itemOnGround = text;
+      console.log(`[Parser] Item on ground: "${text}"`);
     }
 
     // Price detection: "for you, only X zorkmids" or "worth X zorkmids" or "#chat price"
-    // Shop messages: "Hyeghu offers it for 13 zorkmids" / "For you, only 13 zorkmids"
-    // #chat: "<name> says it'll cost you X zorkmids" / "price X zorkmids"
-    const priceMatch = text.match(/(?:for (?:you|thee),?\s*(?:only\s*)?|(?:I'll give you|offer)\s+|costs?\s+|cost you\s+|it for\s+|price\s+)(\d+)\s*(?:zorkmids?|gold pieces?|zm)/i);
+    // Also: "Hyeghu offers it for 13 zorkmids" / "For you, only 13 zorkmids"  
+    // Also: inline "(unpaid, 13 zorkmids)" / "cost X zorkmids" / "price X zorkmids"
+    // Also: shopkeeper price quote from #chat
+    if (/zorkmid|gold piece/i.test(text)) {
+      console.log(`[Parser] Potential price message: "${text}"`);
+    }
+    const priceMatch = text.match(/(?:for (?:you|thee),?\s*(?:only\s*)?|(?:I'll give you|offer)\s+|costs?\s+|cost you\s+|it for\s+|price\s+|unpaid,?\s*)(\d+)\s*(?:zorkmids?|gold pieces?|zm)/i);
     if (priceMatch) {
       // Try to extract item name from the price message itself
       let itemName = '';
